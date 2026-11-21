@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Machine-Verified Proof of Waring's Theorem in Lean 4</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], tags: 'ams' },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<style>
+  :root { --ink:#1f2937; --muted:#6b7280; --rule:#e5e7eb; --accent:#b91c1c; }
+  html { font-size: 16px; }
+  body {
+    margin: 0 auto; max-width: 46rem; padding: 3rem 1.4rem 6rem;
+    font-family: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+                 "Songti SC", "Source Han Serif SC", serif;
+    color: var(--ink); line-height: 1.68; background: #fff;
+  }
+  h1 { font-size: 1.85rem; line-height: 1.25; margin: 0 0 .5rem; letter-spacing: -.01em; }
+  .authors { color: var(--muted); font-size: .95rem; margin-bottom: .25rem; }
+  .venue   { color: var(--muted); font-size: .88rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.22rem; margin: 2.6rem 0 .7rem; padding-bottom: .25rem;
+       border-bottom: 1px solid var(--rule); }
+  h3 { font-size: 1.02rem; margin: 1.6rem 0 .5rem; }
+  p { margin: 0 0 .85rem; text-align: justify; hyphens: auto; }
+  .abstract { background:#fafafa; border-left:3px solid var(--accent);
+              padding:.9rem 1.1rem; margin:1.4rem 0 2rem; font-size:.95rem; }
+  .abstract b { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; margin: 1rem 0 1.4rem; }
+  th, td { border-bottom: 1px solid var(--rule); padding: .34rem .45rem; text-align: left;
+           vertical-align: top; }
+  th { font-weight: 600; background: #f9fafb; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  figure { margin: 1.8rem 0; text-align: center; }
+  figure img { max-width: 100%; height: auto; border: 1px solid var(--rule); }
+  figcaption { font-size: .84rem; color: var(--muted); margin-top: .55rem;
+               text-align: left; line-height: 1.5; }
+  pre { background: #f8fafc; border: 1px solid var(--rule); border-radius: 4px;
+        padding: .75rem .9rem; overflow-x: auto; font-size: .78rem; line-height: 1.5; }
+  code { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+         font-size: .85em; }
+  pre code { font-size: .78rem; }
+  .thm { border-left: 2px solid #4f46e5; padding: .1rem 0 .1rem .9rem; margin: 1rem 0; }
+  .thm .lbl { font-weight: 600; font-style: normal; }
+  .note { font-size: .86rem; color: var(--muted); }
+  .key { background: #fef7e6; border: 1px solid #f0d9a8; border-radius: 4px;
+         padding: .7rem .9rem; margin: 1rem 0; font-size: .92rem; }
+  .eq { margin: .9rem 0; }
+  ol.refs { font-size: .84rem; color: #374151; padding-left: 1.4rem; }
+  ol.refs li { margin-bottom: .4rem; }
+  .badge { display:inline-block; font-size:.72rem; font-family:monospace;
+           background:#fee2e2; color:#b91c1c; border-radius:3px; padding:.06rem .34rem; }
+  @media print {
+    body { padding: 0; max-width: none; }
+    h2 { page-break-after: avoid; }
+    figure { page-break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>A Machine-Verified Proof of Waring's Theorem in Lean&nbsp;4</h1>
+<div class="authors">DeepSeek Harness agent team — lead agent + six delegated sub-agents</div>
+<div class="venue">Formalization report · 2026-11-20 · Lean 4 v4.36.0-rc2 + Mathlib</div>
+
+<div class="abstract">
+<b>Abstract.</b> We report a complete, machine-checked proof of Waring's theorem in Lean&nbsp;4:
+for every \(k\ge 1\) there is \(g\) such that every natural number is a sum of at most \(g\)
+nonnegative \(k\)-th powers. The proof follows the elementary density route of Linnik (1943),
+with the analytic input supplied by a formalization of Jameson's mean-value theorem.
+The development comprises 29 modules and 10&nbsp;460 lines of Lean. The main theorem
+<code>WaringTheorem2.waringTheorem</code> compiles with no <code>sorry</code>, no <code>admit</code>,
+no added axioms: <code>#print axioms</code> yields only the three standard ones
+<code>[propext, Classical.choice, Quot.sound]</code>.
+<b>This is not the first formalization of Waring's theorem</b> — Harrison's HOL Light
+development, committed 2026-11-06, precedes it by fourteen days and is stronger in one
+respect (explicit \(g\)); what is new here is a Lean&nbsp;4 / Mathlib proof along a
+different, elementary route. §2 states this precisely.
+We also describe the formalization design, the verification protocol, and the lessons
+learned — including one estimate that was wrong by two orders of magnitude.
+</div>
+
+<h2>1. Introduction</h2>
+
+<p>Waring's problem, posed in 1770 and proved by Hilbert in 1909, asks whether for each
+\(k\ge 1\) there is a bound \(g(k)\) such that every natural number is a sum of at most
+\(g(k)\) nonnegative \(k\)-th powers. The exact values of \(g(k)\) are known only for
+\(k\le 4\) (\(g(1)=1,\ g(2)=4\) by Lagrange, \(g(3)=9\), \(g(4)=19\)); for \(k\ge 5\) even
+the precise value of the related quantity \(G(k)\) is open. What is <em>not</em> open — and
+what we formalize here — is the existence statement itself.</p>
+
+<p>Our proof follows Linnik's 1943 elementary route. It reduces Waring's theorem to a
+<em>density</em> statement about sets of integers representable by a fixed number \(s\) of
+\(k\)-th powers, and that density statement is in turn a corollary of a mean-value
+estimate for exponential sums (Jameson's Theorem&nbsp;1). The whole reduction needs no
+complex analysis beyond the orthogonality of the exponential function on \([0,1]\),
+and — as we discovered while formalizing — no Fourier-series theory at all.</p>
+
+<div class="key">
+<b>Contribution.</b> A complete Lean&nbsp;4 proof of
+\[ \forall k\ge 1\ \exists g\ \forall n\ \exists s\le g,\quad n=\sum_{i \lt s}x_i^k , \]
+together with the two analytic theorems it depends on: Jameson's mean-value estimate
+for \(\int_0^1\bigl|\sum_{n\le N}e(\alpha f(n))\bigr|^{8^{k-1}}d\alpha\) for arbitrary
+integer polynomials \(f\), and the density bridge. All constants are explicit, all proofs
+are <code>sorry</code>-free, and the only axioms are Lean's three standard ones.
+</div>
+
+<h2>2. Related work, and what is actually new</h2>
+
+<p><b>This is not the first formalization of Waring's theorem.</b> John Harrison's HOL Light
+library contains a complete proof in <code>Sieve/waring.ml</code> (1784 lines),
+<em>committed on 2026-11-06</em>, including
+<code>HILBERT_WARING : !k. 1 &lt;= k ==&gt; ?g. !n. ?x. n = nsum(1..g) (\i. x i EXP k)</code>
+with the <em>explicit</em> <code>g = 2^k + 1 + N0</code>, together with
+<code>WARING_HARDY_LITTLEWOOD : G(k) &lt;= 2^k + 1</code> and
+<code>WARING_COUNT_LOWER : r(N) &gt;= c N^(s/k-1)</code>. Its route is the Hardy–Littlewood
+circle method: major arcs (<code>waring_major.ml</code>), the singular series
+(<code>waring_singular.ml</code>), Weyl's inequality and Hua's lemma
+(<code>waring_weyl.ml</code>).</p>
+
+<p class="note">The two developments were produced independently and almost simultaneously:
+Harrison's commit is dated 2026-11-06, the present Lean development was completed on
+2026-11-20 — fourteen days apart. Wiedijk's <i>Formalizing 100 Theorems</i> page (last
+modified 2026-11-01, five days before Harrison's commit) still lists "Hilbert–Waring theorem"
+as unformalized; a striking reminder that even the standard tracking page lags behind.</p>
+
+<p>The claims of the present work are therefore narrower, and we state them precisely:</p>
+
+<ul>
+<li><b>In Lean&nbsp;4 / Mathlib this is, to our knowledge, the first.</b> Mathlib contains only
+the case \(k=2\) (Lagrange's theorem); a recursive scan of the Mathlib sources for
+"Waring" returns no match, and the <code>lean-eval</code> benchmark for \(g(3)=9\) records
+that "no Hilbert–Waring material" exists in the ecosystem.</li>
+<li><b>The route is different.</b> We follow Linnik's 1943 density argument rather than the
+circle method. This changes the analytic requirements qualitatively: no Fourier theory, no
+major/minor arcs, no singular series — only orthogonality on \([0,1]\) and finite sums.</li>
+<li><b>The price is real.</b> We obtain only the <em>existence</em> of \(g\), not Harrison's
+explicit \(g=2^k+1+N_0\). On that axis the HOL Light development is strictly stronger.</li>
+</ul>
+
+<h2>3. The statement and the route</h2>
+
+<h3>2.1 The statement in Lean</h3>
+<pre><code>def IsSumOfKthPowers (k n s : ℕ) : Prop := ∃ f : Fin s → ℕ, n = ∑ i, (f i) ^ k
+
+def WaringTheorem : Prop :=
+  ∀ k : ℕ, 0 &lt; k → ∃ g : ℕ, ∀ n : ℕ, ∃ s ≤ g, IsSumOfKthPowers k n s</code></pre>
+
+<p>This is exactly the textbook statement: <code>f : Fin s → ℕ</code> supplies \(s\)
+nonnegative bases, and the sum is required to equal \(n\) exactly. The final theorem is a
+single line:</p>
+
+<pre><code>theorem waringTheorem : WaringTheorem :=
+  waringTheorem_of_positive_density positiveDensity</code></pre>
+
+<h3>2.2 Linnik's density route</h3>
+
+<p>Write \(r_s(n)\) for the number of representations of \(n\) as a sum of \(s\) \(k\)-th
+powers, and let \(A_s=\{n\ge 1: r_s(n)>0\}\). Two facts suffice:</p>
+
+<div class="thm">
+<span class="lbl">Theorem 2 (density bridge).</span> For \(s=8^{k-1}\) the set \(A_s\) has
+positive Schnirelmann density: there is \(\delta>0\) with
+\(\#\{n\le N: r_s(n)>0\}\ \ge\ \delta N\) for all \(N\).
+</div>
+
+<div class="thm">
+<span class="lbl">Schnirelmann's theorem (formalized earlier).</span> If \(A,B\subseteq\mathbb N\)
+have densities \(\alpha,\beta\) with \(\alpha+\beta>1\), then every natural number is a sum of
+one element of \(A\) and one of \(B\).
+</div>
+
+<p>Applying Schnirelmann's theorem with \(A=B=A_s\) (and iterating, or taking a larger \(s\))
+converts positive density into a uniform bound \(g\), and Waring's theorem follows.
+Figure&nbsp;1 summarises the architecture; the numerical content is carried entirely by
+Theorem&nbsp;1.</p>
+
+<figure>
+  <img src="fig/fig2_chain.png" alt="Three-step proof architecture">
+  <figcaption><b>Figure 1.</b> The three-step architecture. The elementary counting lemmas
+  feed Jameson's mean-value estimate (Theorem&nbsp;1); that estimate is the only analytic
+  input to the density bridge (Theorem&nbsp;2); positive density plus Schnirelmann's theorem
+  gives Waring's theorem. No Fourier theory is involved anywhere.</figcaption>
+</figure>
+
+<h2>4. Elementary counting lemmas</h2>
+
+<p>All of the arithmetic is carried by counting solutions of linear equations. For
+\(h=(h_1,h_2)\), \(H\le M\), let \(q(n;h)=\#\{(m_1,m_2)\in[0,M]^2: h_1m_1+h_2m_2=n\}\).</p>
+
+<div class="thm">
+<span class="lbl">Lemma 2.</span> If \(h\ne(0,0)\), \(g=\gcd(h_1,h_2)\), \(a_i=h_i/g\), then
+\(q(n;h)=0\) unless \(g\mid n\), and then
+\[ q(n;h)\ \le\ 2M\max(|a_1|,|a_2|)+1 . \]
+</div>
+
+<p>Summing over \(h\) with a weight \(\sigma_{-1}(n)=\sum_{g\mid n}1\) gives Lemma&nbsp;3,
+\(q(n)\le 4H(H+1)+8HM\sigma_{-1}(n)\), and the square-sum estimate
+\(\sum_{n\le x}\sigma_{-1}(n)^2\le 6x\) (Lemma&nbsp;6) then bounds the fourth moment of the
+representation count. Lemma&nbsp;7 — the \(h_i\ne 0\) variant needed in the induction — is
+the statement
+\[
+\#\{(h,m): h_i\in[-H,H]\setminus\{0\},\ m_i\in[0,M],\ \textstyle\sum_i h_im_i=0\}
+\ \le\ 5250\,(HM)^3 ,
+\]
+which we formalize as <code>hmCount7_le'</code>.</p>
+
+<div class="note">
+The formalization deviates from Hua's textbook at one point: Hua claims
+\(Q(0)\ll(HM)^{3/2}\), which omits the \((2M+1)^2\) solutions with \(h=(0,0)\). Jameson
+corrects this by excluding \(h=0\), which is exactly what the inductive step needs — and
+which is why Lemma&nbsp;7 and Lemma&nbsp;7b (the \(k=2\) case, which does allow \(h=0\)) have
+different constants.
+</div>
+
+<h2>5. Theorem 1: mean-value estimates</h2>
+
+<p>For an integer polynomial \(f(n)=a_d n^d+\cdots+a_1n\) with \(a_d\ne0\) and
+\(|a_j|\le c\,N^{d-j}\), one proves</p>
+
+<div class="eq">
+\[
+\int_0^1\Big|\sum_{n\le N}e(\alpha f(n))\Big|^{8^{d-1}}d\alpha
+\ \le\ R(c)\;N^{\,8^{d-1}-d}.
+\tag{1}
+\]
+</div>
+
+<p>The proof is by induction on \(d\), and the inductive step has four layers, each of
+which was formalized as a reusable module:</p>
+
+<ol>
+<li><b>Weyl differencing.</b> Expanding the square and grouping by \(h=m-n\) gives
+\(|S|^2=N+1+\sum_{h\ne0}b_h\) with \(b_h=\sum_n e(\alpha (f(n+h)-f(n)))\). We formalize
+this as <code>normSq_expSum_le_zero</code> and the underlying reindexing as
+<code>sum_diff_group</code>.</li>
+<li><b>Hölder.</b> \(\big|\sum_h b_h\big|^m\le(2N)^{m-1}\sum_h|b_h|^m\), via the power-mean
+inequality <code>sum_pow_le_card_pow_mul_sum_pow</code>.</li>
+<li><b>Structure of \(\varphi\).</b> Writing \(f(n+h)-f(n)=h\,\varphi(n,h)\), the polynomial
+\(\varphi\) has degree \(d-1\) with leading coefficient \(d\,a_d\ne0\) and coefficients
+\(|b_r|\le C N^{d-1-r}\) (<code>diffH_polyEval</code>, <code>diffCoeff_bound</code>).
+The induction hypothesis applies to \(\varphi\) — this is where the scaling subtlety
+described in §6.3 appears.</li>
+<li><b>Fourth power and counting.</b> Integrating the fourth power of the Hölder bound and
+expanding \(|b_h|^{2s}=\sum_Q A(Q,h)e(Q\alpha)\) turns the double sum into a count of
+solutions of \(h_1m_1+\cdots+h_4m_4=0\) with \(h_i\ne0\), which Lemma&nbsp;7 bounds by
+\(5250(NK)^3\). The reindexing \(Q\mapsto Q/h\) is where the associativity
+\(Q_i=h_i m_i\) is used; dropping it costs a factor \(N^4\).</li>
+</ol>
+
+<p>The base case \(k=2\) is Jameson's Lemma&nbsp;8, which we formalize in the general
+quadratic form \(f(n)=a_2n^2+a_1n\) with \(|a_2|\le c_2\), \(|a_1|\le c_1N\), obtaining
+\(\int_0^1|\sum_{n\le N}e(\alpha f(n))|^8d\alpha\le C(c_1,c_2)N^6\) with an explicit constant.
+The final assembly is <code>meanValueBound_all : ∀ d ≥ 2, MeanValueBound d</code>.</p>
+
+<h2>6. Theorem 2: the density bridge</h2>
+
+<p>This is the part where we expected the most work and found the least. Jameson's proof has
+three steps and no circle-method arcs at all.</p>
+
+<p>Let \(S(\alpha)=\sum_{m\le M}e(\alpha m^k)\) and
+\(r(n)=\#\{(m_1,\dots,m_s)\in[0,M]^s:\sum m_i^k=n\}\).</p>
+
+<ol>
+<li><b>Integral representation.</b> Expanding \(S^s\) and applying orthogonality
+\(\int_0^1e(m\alpha)d\alpha=[m=0]\),
+\[
+r(n)=\int_0^1 S(\alpha)^s\,e(-n\alpha)\,d\alpha .
+\tag{2}
+\]</li>
+<li><b>Upper bound.</b> From (2), \(|r(n)|\le\int_0^1|S(\alpha)|^sd\alpha\), and Theorem&nbsp;1
+with \(s=8^{k-1}\) gives
+\[
+r(n)\ \le\ C\,M^{\,s-k}.
+\tag{3}
+\]</li>
+<li><b>Lower bound.</b> Every \(f\in\{0,\dots,M\}^s\) with \(sM^k\le N\) produces a
+representation of some \(n\le N\), so \(\sum_{n\le N}r(n)\ge(M+1)^s\).
+Comparing with (3) yields \(\#\{n\le N:r(n)>0\}\ \ge\ N/(2sC)\), i.e. positive density.</li>
+</ol>
+
+<p>For \(k=1\) the representation function is identically \(1\), giving density \(1\).
+The formal statement of Theorem&nbsp;2 is
+<code>positiveDensity : ∀ k, 0 &lt; k → ∃ s δ, 0 &lt; δ ∧ HasDensity {n | ∃ t ≤ s, IsSumOfKthPowers k n t} δ</code>,
+which is exactly the hypothesis consumed by
+<code>WaringLinnik.waringTheorem_of_positive_density</code>.</p>
+
+<h2>7. Formalization design</h2>
+
+<h3>6.1 Module structure</h3>
+
+<p>The development is split into 29 modules, laid out as a dependency DAG with a clean
+layering: foundations (statement, orthogonality, finite differences), the elementary
+counting layer, the analytic layer (exponential sums, Weyl differencing, Hölder), the
+mean-value induction, the density bridge, and finally the one-line assembly. Figure&nbsp;2
+shows the graph, coloured by role; Figure&nbsp;3 shows the size distribution.</p>
+
+<figure>
+  <img src="fig/fig1_dag.png" alt="Module dependency graph">
+  <figcaption><b>Figure 2.</b> Dependency graph. Each box is a module; the small number is
+  its line count; arrows point from dependency to dependent. The graph is acyclic with
+  levels 0–8, and no module imports anything outside its level's predecessors. The final
+  theorem (<code>Theorem2</code>, red) depends on exactly two modules: the mean-value
+  estimate and the Schnirelmann interface.</figcaption>
+</figure>
+
+<figure>
+  <img src="fig/fig4_lines.png" alt="Module sizes">
+  <figcaption><b>Figure 3.</b> Line counts. The three largest modules are the general
+  quadratic base case (1&nbsp;084), the mean-value induction (1&nbsp;776) and Lemma&nbsp;3
+  (785). The final assembly module is 489 lines, almost all of it the density argument —
+  the mathematical reductions were already formalized.</figcaption>
+</figure>
+
+<h3>6.2 What was reused, and what was new</h3>
+
+<p>Three discoveries shaped the design:</p>
+
+<ol>
+<li><b>No Fourier series.</b> The "Fourier expansion" of \(|b_h|^m\) is a finite
+reindexing of a finite exponential sum, so orthogonality on \([0,1]\) suffices. This
+removed the single largest expected dependency (an <code>AddCircle</code> Fourier theory),
+and it is the main reason the project took days rather than years.</li>
+<li><b>Scaling of the induction hypothesis.</b> The hypothesis must be stated for
+<em>summation length</em> \(M\le N\) while the coefficient bound is at scale \(N\); otherwise
+the variable substitution \(N-h\mapsto N\) loses a factor \(N\) per step. The strengthened
+predicate <code>MeanValueBoundS</code> is the correct form, and its base case requires
+re-deriving the constant bookkeeping of Lemma&nbsp;8 rather than quoting it.</li>
+<li><b>Sign folding must act on \(h\) as well.</b> To reduce \(m\in[-K,K]^4\) to
+\([0,K]^4\), one must flip the sign of \(h_i\) simultaneously:
+\((h,m)\mapsto(\operatorname{sgn}(m_i)h_i,|m_i|)\) preserves
+\(\sum h_im_i=0\) verbatim. Folding only \(m\) does not.</li>
+</ol>
+
+<h3>6.3 Constant bookkeeping</h3>
+
+<p>Every theorem carries an explicit constant. The bookkeeping is mechanical but unforgiving:
+the exponent identity
+\(4(m-1)+4(m-(d-1))+3d=8m-d\) (with \(m=8^{d-2}\)) must hold exactly, and the
+factors \((M+1)^{4m}\) and \((2M)^{4(m-1)}\) must be absorbed into \(N^{8m-d}\) using
+\(M\le N\). Four recurring Lean pitfalls were: <code>set</code> defeating
+<code>positivity</code>; mixed bases in \(2^{d-1}\le 8^{d-2}\); implicit arguments of
+<code>Nat.lt_two_pow_self</code>; and <code>calc</code> failing on associativity (replacing
+it by <code>have := by ring</code> plus <code>rw</code> works).</p>
+
+<h2>8. Verification</h2>
+
+<p>The verification protocol for every module was:</p>
+<ol>
+<li>recompile from source with <code>lean -o Module.olean Module.lean</code> (this Lean
+version does <em>not</em> write <code>.olean</code> without <code>-o</code>);</li>
+<li>scan for forbidden tokens (<code>sorry</code>, <code>admit</code>, <code>axiom</code>,
+<code>native_decide</code>);</li>
+<li>audit the axiom set with <code>#print axioms</code>;</li>
+<li>re-read the <em>statement</em> of each headline theorem against its mathematical
+content — compilation cannot detect a weakened hypothesis.</li>
+</ol>
+
+<p>For the final theorem the audit reads:</p>
+<pre><code>'Waring.waringTheorem' depends on axioms:
+  [propext, Classical.choice, Quot.sound]</code></pre>
+
+<p>These are Lean's three standard axioms (propositional extensionality, classical choice,
+and quotient soundness); every Mathlib theorem depends on them. Crucially,
+<code>sorryAx</code> is absent. The statement <code>WaringTheorem</code> itself lives in a
+module (<code>WaringStatement</code>, 44 lines) that was frozen before the main work began,
+so it cannot have been weakened to fit the proof.</p>
+
+<h3>7.1 A numerical sanity check</h3>
+
+<p>As an independent sanity check on the representation counts that drive Theorem&nbsp;2,
+Figure&nbsp;4 plots \(r_3(n)\) and its counting function computed directly by enumeration.
+The values of \(r_3(n)\) cluster on \(\{1,3,6,9,12\}\) — a consequence of the symmetry
+group of three variables — and roughly \(16\%\) of \(n\le2000\) are represented, consistent
+with the local obstruction \(n\equiv\pm4\ (\mathrm{mod}\ 9)\) and with the qualitative
+content of the density theorem (positive, but far from \(1\)).</p>
+
+<figure>
+  <img src="fig/fig3_r3.png" alt="r_3(n) and its counting function">
+  <figcaption><b>Figure 4.</b> Left: the representation function
+  \(r_3(n)=\#\{(a,b,c):a^3+b^3+c^3=n\}\) for \(n\le2000\), computed by brute force.
+  Right: its counting function against the line of slope \(1\); the observed density is
+  \(0.158\). This is not part of the proof, but it illustrates why a density argument
+  (rather than an exact representation statement) is the natural route.</figcaption>
+</figure>
+
+<h2>9. Lessons learned</h2>
+
+<p><b>An estimate that was wrong by two orders of magnitude.</b> Before starting, we recorded
+in the project plan that Theorem&nbsp;1 would be a "multi-year project", mainly because
+circle-method formalization was assumed to require an <code>AddCircle</code> Fourier theory
+absent from Mathlib. The actual development took four days. The error was not in the
+mathematics but in the meta-mathematics: we misjudged <em>which</em> infrastructure was
+actually needed. The proof never needs Fourier convergence — only finite sums and
+orthogonality.</p>
+
+<p><b>Delegation with adversarial review.</b> Roughly 40% of the code was produced by six
+delegated sub-agents working on independent modules. Every deliverable was re-verified from
+source before acceptance, and two of them corrected genuine mathematical errors made by the
+lead agent (the sign-folding argument and the \(Q\mapsto Q/h\) reindexing). The lesson is
+that delegation is effective when (i) interfaces are stated precisely, (ii) verification is
+mechanical and adversarial, and (iii) the lead keeps the design decisions.</p>
+
+<p><b>Compilation is necessary but not sufficient.</b> A passing build certifies the proof
+term against the statement; it says nothing about whether the statement is the intended
+one. The most valuable single check in this project was diffing the frozen
+<code>WaringTheorem</code> definition against the textbook statement.</p>
+
+<h2>10. Reproducing the verification</h2>
+
+<pre><code>$lean = 'D:\lean\elan\toolchains\leanprover--lean4---v4.36.0-rc2\bin\lean.exe'
+$env:LEAN_PATH = ($paths -join ';')       # workspace + mathlib build dirs
+Set-Location gaussian-week1
+&amp; $lean CheckFinal.lean                  # prints WaringTheorem and its axioms
+&amp; $lean CheckTheorem1.lean               # the mean-value estimate
+&amp; $lean CheckWaringAll.lean              # the pre-existing density/Schnirelmann layer</code></pre>
+
+<h2>References</h2>
+
+<ol class="refs">
+<li>G. H. Hardy, J. E. Littlewood, <i>A new solution of Waring's problem</i>, Quart. J. Math.
+48 (1919), 272–293.</li>
+<li>D. Hilbert, <i>Beweis für die Darstellbarkeit der ganzen Zahlen durch eine feste Anzahl
+nter Potenzen</i>, Math. Annalen 67 (1909), 281–300.</li>
+<li>L. K. Hua, <i>Introduction to Number Theory</i>, Springer, 1982. (See the correction
+noted in §3.)</li>
+<li>G. J. O. Jameson, <i>Linnik's proof of the Waring–Hilbert theorem</i>, notes, Lancaster
+University. (Source text: <code>refs/warlin.txt</code> in this repository.)</li>
+<li>Yu. V. Linnik, <i>An elementary solution of Waring's problem by Shnirelman's method</i>
+(Russian), Mat. Sbornik NS 12 (1943), 225–230.</li>
+<li>M. B. Nathanson, <i>Elementary Methods in Number Theory</i>, Springer, 2000.</li>
+<li>I. M. Vinogradov, <i>On Waring's theorem</i> (Russian), Izv. Akad. Nauk SSSR 4 (1928),
+393–400.</li>
+<li>The Mathlib community, <i>Mathlib4</i>, <code>leanprover-community/mathlib4</code>.</li>
+</ol>
+
+<hr style="margin-top:3rem;border:none;border-top:1px solid var(--rule)">
+<p class="note">Artifact: 29 Lean modules, 10&nbsp;460 lines, in
+<code>gaussian-week1/</code>. Main result: <code>WaringTheorem2.lean</code>, 489 lines.
+Axioms: <code>[propext, Classical.choice, Quot.sound]</code>. No <code>sorry</code> anywhere
+in the <code>Waring*</code> modules.</p>
+
+</body>
+</html>

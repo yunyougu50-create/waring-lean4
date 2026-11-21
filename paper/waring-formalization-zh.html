@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lean 4 中华林定理的机器验证证明</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']], tags: 'ams' },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<style>
+  :root { --ink:#1f2937; --muted:#6b7280; --rule:#e5e7eb; --accent:#b91c1c; }
+  html { font-size: 16px; }
+  body {
+    margin: 0 auto; max-width: 46rem; padding: 3rem 1.4rem 6rem;
+    font-family: "Source Han Serif SC", "Songti SC", "SimSun", "Noto Serif CJK SC",
+                 Georgia, "Times New Roman", serif;
+    color: var(--ink); line-height: 1.85; background: #fff;
+    text-align: justify;
+  }
+  h1 { font-size: 1.72rem; line-height: 1.4; margin: 0 0 .5rem; letter-spacing: .01em;
+       font-family: "Source Han Sans SC", "Microsoft YaHei", "SimHei", sans-serif; }
+  .authors { color: var(--muted); font-size: .95rem; margin-bottom: .25rem; }
+  .venue   { color: var(--muted); font-size: .88rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.18rem; margin: 2.6rem 0 .7rem; padding-bottom: .25rem;
+       border-bottom: 1px solid var(--rule);
+       font-family: "Source Han Sans SC", "Microsoft YaHei", "SimHei", sans-serif; }
+  h3 { font-size: 1.00rem; margin: 1.6rem 0 .5rem;
+       font-family: "Source Han Sans SC", "Microsoft YaHei", "SimHei", sans-serif; }
+  p { margin: 0 0 .85rem; }
+  .abstract { background:#fafafa; border-left:3px solid var(--accent);
+              padding:.9rem 1.1rem; margin:1.4rem 0 2rem; font-size:.95rem; }
+  .abstract b { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; margin: 1rem 0 1.4rem; }
+  th, td { border-bottom: 1px solid var(--rule); padding: .34rem .45rem; text-align: left;
+           vertical-align: top; }
+  th { font-weight: 600; background: #f9fafb; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  figure { margin: 1.8rem 0; text-align: center; }
+  figure img { max-width: 100%; height: auto; border: 1px solid var(--rule); }
+  figcaption { font-size: .85rem; color: var(--muted); margin-top: .55rem;
+               text-align: justify; line-height: 1.6; }
+  pre { background: #f8fafc; border: 1px solid var(--rule); border-radius: 4px;
+        padding: .75rem .9rem; overflow-x: auto; font-size: .78rem; line-height: 1.5;
+        text-align: left; }
+  code { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+         font-size: .86em; }
+  pre code { font-size: .78rem; }
+  .thm { border-left: 2px solid #4f46e5; padding: .1rem 0 .1rem .9rem; margin: 1rem 0; }
+  .thm .lbl { font-weight: 600; font-style: normal;
+              font-family: "Source Han Sans SC", "Microsoft YaHei", sans-serif; }
+  .note { font-size: .87rem; color: var(--muted); }
+  .key { background: #fef7e6; border: 1px solid #f0d9a8; border-radius: 4px;
+         padding: .7rem .9rem; margin: 1rem 0; font-size: .93rem; }
+  .eq { margin: .9rem 0; }
+  ol.refs { font-size: .85rem; color: #374151; padding-left: 1.4rem; }
+  ol.refs li { margin-bottom: .4rem; }
+  @media print {
+    body { padding: 0; max-width: none; }
+    h2 { page-break-after: avoid; }
+    figure { page-break-inside: avoid; }
+    a { color: inherit; text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Lean&nbsp;4 中华林定理的机器验证证明</h1>
+<div class="authors">DeepSeek Harness 智能体团队 —— 主控智能体 + 六个委派子智能体</div>
+<div class="venue">形式化报告 · 2026-11-20 · Lean 4 v4.36.0-rc2 + Mathlib</div>
+
+<div class="abstract">
+<b>摘要。</b>本报告给出华林（Waring）定理在 Lean&nbsp;4 中一个完整的、经机器核验的证明：
+对每个 \(k\ge 1\)，存在 \(g\)，使每个自然数都是至多 \(g\) 个非负 \(k\) 次幂之和。证明遵循
+Linnik（1943）的初等密度路线，其解析输入是对 Jameson 均值定理的形式化。
+整个开发包含 29 个模块、10&nbsp;460 行 Lean 代码。主定理
+<code>WaringTheorem2.waringTheorem</code> 编译通过，无 <code>sorry</code>、无 <code>admit</code>、
+未添加任何公理：<code>#print axioms</code> 只给出 Lean 的三条标准公理
+<code>[propext, Classical.choice, Quot.sound]</code>。
+<b>这不是华林定理的第一个形式化</b>——Harrison 的 HOL Light 开发（2026-11-06 提交）早于本工作
+十四天，且在某一方面更强（给出了显式的 \(g\)）；此处的新意在于一个 Lean&nbsp;4 / Mathlib 中、
+沿另一条初等路线的证明。§2 精确陈述了这一点。本报告还描述了形式化设计、验证协议，
+以及经验教训——包括一次错误达两个数量级的工期估计。
+</div>
+
+<h2>1. 引言</h2>
+
+<p>华林问题由 Edward Waring 于 1770 年提出，1909 年由 Hilbert 证明：对每个 \(k\ge 1\)，
+存在界 \(g(k)\)，使每个自然数都是至多 \(g(k)\) 个非负 \(k\) 次幂之和。\(g(k)\) 的精确值
+仅在 \(k\le 4\) 时已知（\(g(1)=1\)、\(g(2)=4\) 即 Lagrange 四平方定理、\(g(3)=9\)、\(g(4)=19\)）；
+对 \(k\ge 5\)，连相关量 \(G(k)\) 的精确值都是未解决的公开问题。此处形式化的<b>不是</b>这些
+最优值，而是存在性本身。</p>
+
+<p>我们的证明遵循 Linnik 1943 年的初等路线。它把华林定理归约为一个关于「可用固定个数
+\(s\) 的 \(k\) 次幂表示的整数集合」的<b>密度</b>陈述，而这个密度陈述又是指数和均值估计
+（Jameson 定理 1）的推论。整个归约不需要超出 \([0,1]\) 上指数函数正交性的复分析——
+而且，正如我们在形式化过程中发现的——<b>完全不需要 Fourier 级数理论</b>。</p>
+
+<div class="key">
+<b>贡献。</b>一个完整的 Lean&nbsp;4 证明：
+\[ \forall k\ge 1\ \exists g\ \forall n\ \exists s\le g,\quad n=\sum_{i \lt s}x_i^k , \]
+连同它所依赖的两个解析定理：对任意整系数多项式的
+\(\int_0^1\bigl|\sum_{n\le N}e(\alpha f(n))\bigr|^{8^{k-1}}d\alpha\) 的 Jameson 均值估计，
+以及密度桥。全部常数显式，全部证明 <code>sorry</code>-free，公理只有 Lean 的三条标准公理。
+</div>
+
+<h2>2. 相关工作，以及真正的新意</h2>
+
+<p><b>这不是华林定理的第一个形式化。</b>John Harrison 的 HOL Light 库在
+<code>Sieve/waring.ml</code>（1784 行，<em>2026-11-06 提交</em>）中包含完整证明，其中有</p>
+
+<pre><code>HILBERT_WARING : !k. 1 &lt;= k ==&gt; ?g. !n. ?x. n = nsum(1..g) (\i. x i EXP k)</code></pre>
+
+<p>并给出<em>显式</em>的 <code>g = 2^k + 1 + N0</code>，此外还有
+<code>WARING_HARDY_LITTLEWOOD : G(k) &lt;= 2^k + 1</code> 与
+<code>WARING_COUNT_LOWER : r(N) &gt;= c N^(s/k-1)</code>。其路线是
+Hardy–Littlewood 圆法：优弧（<code>waring_major.ml</code>）、奇异级数
+（<code>waring_singular.ml</code>）、Weyl 不等式与 Hua 引理（<code>waring_weyl.ml</code>）。</p>
+
+<p class="note">两个开发是相互独立、几乎同时产生的：Harrison 的提交日期是 2026-11-06，
+本 Lean 开发于 2026-11-20 完成——相隔十四天。Wiedijk 的
+<i>Formalizing 100 Theorems</i> 页面（最后修改 2026-11-01，比 Harrison 的提交早五天）
+至今仍把 "Hilbert–Waring theorem" 列为未形式化；这提醒我们，即便是标准的
+追踪页面也会滞后。</p>
+
+<p>因此本工作的主张更窄，我们精确陈述如下：</p>
+
+<ul>
+<li><b>在 Lean&nbsp;4 / Mathlib 中，据我们所知这是第一个。</b>Mathlib 只包含 \(k=2\) 的情形
+（Lagrange 定理）；对 Mathlib 源码中 "Waring" 的递归扫描零命中，且 Lean 的
+<code>lean-eval</code> 基准中关于 \(g(3)=9\) 的条目明确记载生态内 "no Hilbert–Waring
+material"。</li>
+<li><b>路线不同。</b>我们遵循 Linnik 1943 年的密度论证，而非圆法。这从质上改变了解析
+需求：不需要 Fourier 理论、不需要优弧/劣弧、不需要奇异级数——只需要 \([0,1]\) 上的
+正交性与有限和。</li>
+<li><b>代价是真实的。</b>我们只得到 \(g\) 的<em>存在性</em>，而不是 Harrison 的显式
+\(g=2^k+1+N_0\)。在这一维度上，HOL Light 的开发严格更强。</li>
+</ul>
+
+<h2>3. 陈述与路线</h2>
+
+<h3>3.1 Lean 中的陈述</h3>
+<pre><code>def IsSumOfKthPowers (k n s : ℕ) : Prop := ∃ f : Fin s → ℕ, n = ∑ i, (f i) ^ k
+
+def WaringTheorem : Prop :=
+  ∀ k : ℕ, 0 &lt; k → ∃ g : ℕ, ∀ n : ℕ, ∃ s ≤ g, IsSumOfKthPowers k n s</code></pre>
+
+<p>这正是教科书陈述：<code>f : Fin s → ℕ</code> 给出 \(s\) 个非负底数，并要求其和恰等于 \(n\)。
+最终定理只有一行：</p>
+
+<pre><code>theorem waringTheorem : WaringTheorem :=
+  waringTheorem_of_positive_density positiveDensity</code></pre>
+
+<h3>3.2 Linnik 的密度路线</h3>
+
+<p>记 \(r_s(n)\) 为 \(n\) 表示为 \(s\) 个 \(k\) 次幂之和的表示数，并令
+\(A_s=\{n\ge 1: r_s(n)>0\}\)。只需两件事：</p>
+
+<div class="thm">
+<span class="lbl">定理 2（密度桥）。</span>取 \(s=8^{k-1}\) 时，集合 \(A_s\) 具有正的
+Schnirelmann 密度：存在 \(\delta>0\) 使得
+\(\#\{n\le N: r_s(n)>0\}\ \ge\ \delta N\) 对所有 \(N\) 成立。
+</div>
+
+<div class="thm">
+<span class="lbl">Schnirelmann 定理（已在更早阶段形式化）。</span>若
+\(A,B\subseteq\mathbb N\) 的密度分别为 \(\alpha,\beta\) 且 \(\alpha+\beta>1\)，
+则每个自然数都是一个 \(A\) 中元素与一个 \(B\) 中元素之和。
+</div>
+
+<p>对 \(A=B=A_s\) 应用 Schnirelmann 定理（或迭代，或取更大的 \(s\)），就把正密度转化为
+一致界 \(g\)，华林定理随之成立。图 1 概括了整个架构；全部数值内容都由定理 1 承载。</p>
+
+<figure>
+  <img src="fig/fig2_chain.png" alt="三步证明架构">
+  <figcaption><b>图 1.</b>三步架构。初等计数引理喂给 Jameson 的均值估计（定理 1）；
+  该估计是密度桥（定理 2）唯一的解析输入；正密度加 Schnirelmann 定理即得华林定理。
+  全程不涉及任何 Fourier 理论。（图中数学符号为国际通用写法，故保留英文。）</figcaption>
+</figure>
+
+<h2>4. 初等计数引理</h2>
+
+<p>全部算术都由线性方程的解数承载。对 \(h=(h_1,h_2)\)、\(H\le M\)，令
+\(q(n;h)=\#\{(m_1,m_2)\in[0,M]^2: h_1m_1+h_2m_2=n\}\)。</p>
+
+<div class="thm">
+<span class="lbl">引理 2.</span>若 \(h\ne(0,0)\)，令 \(g=\gcd(h_1,h_2)\)、\(a_i=h_i/g\)，
+则 \(q(n;h)=0\) 除非 \(g\mid n\)，且此时
+\[ q(n;h)\ \le\ 2M\max(|a_1|,|a_2|)+1 . \]
+</div>
+
+<p>对 \(h\) 求和并引入权 \(\sigma_{-1}(n)=\sum_{g\mid n}1\)，得到引理 3：
+\(q(n)\le 4H(H+1)+8HM\sigma_{-1}(n)\)；再用平方和估计
+\(\sum_{n\le x}\sigma_{-1}(n)^2\le 6x\)（引理 6），即可控制表示数的四阶矩。
+归纳步需要的、\(h_i\ne 0\) 版本的引理 7 是</p>
+
+\[
+\#\{(h,m): h_i\in[-H,H]\setminus\{0\},\ m_i\in[0,M],\ \textstyle\sum_i h_im_i=0\}
+\ \le\ 5250\,(HM)^3 ,
+\]
+
+<p>在代码中即 <code>hmCount7_le'</code>。</p>
+
+<div class="note">
+本形式化在一点上偏离了 Hua 的教科书：Hua 断言 \(Q(0)\ll(HM)^{3/2}\)，忽略了
+\(h=(0,0)\) 带来的 \((2M+1)^2\) 个解。Jameson 通过排除 \(h=0\) 修正了这一点，
+而这恰好是归纳步所需要的——这也正是引理 7 与引理 7b（\(k=2\) 情形，允许 \(h=0\)）
+常数不同的原因。
+</div>
+
+<h2>5. 定理 1：均值估计</h2>
+
+<p>对整系数多项式 \(f(n)=a_d n^d+\cdots+a_1n\)，其中 \(a_d\ne0\)、\(|a_j|\le c\,N^{d-j}\)，证明</p>
+
+<div class="eq">
+\[
+\int_0^1\Big|\sum_{n\le N}e(\alpha f(n))\Big|^{8^{d-1}}d\alpha
+\ \le\ R(c)\;N^{\,8^{d-1}-d}.
+\tag{1}
+\]
+</div>
+
+<p>证明对 \(d\) 归纳，归纳步有四层，每一层都被形式化为可复用的模块：</p>
+
+<ol>
+<li><b>Weyl 差分。</b>展开平方并按 \(h=m-n\) 分组，得
+\(|S|^2=N+1+\sum_{h\ne0}b_h\)，其中
+\(b_h=\sum_n e(\alpha (f(n+h)-f(n)))\)。形式化为
+<code>normSq_expSum_le_zero</code>，底层重排为 <code>sum_diff_group</code>。</li>
+<li><b>Hölder 不等式。</b>
+\(\big|\sum_h b_h\big|^m\le(2N)^{m-1}\sum_h|b_h|^m\)，经幂平均不等式
+<code>sum_pow_le_card_pow_mul_sum_pow</code> 实现。</li>
+<li><b>\(\varphi\) 的结构。</b>记 \(f(n+h)-f(n)=h\,\varphi(n,h)\)，则 \(\varphi\) 是
+\(d-1\) 次多项式，首项系数 \(d\,a_d\ne0\)，且系数满足
+\(|b_r|\le C N^{d-1-r}\)（<code>diffH_polyEval</code>、<code>diffCoeff_bound</code>）。
+归纳假设正是作用在 \(\varphi\) 上——这里出现 §7.2 描述的尺度问题。</li>
+<li><b>四次方与计数。</b>对 Hölder 界的四次方积分，并把
+\(|b_h|^{2s}=\sum_Q A(Q,h)e(Q\alpha)\) 展开，双重和化为
+\(h_1m_1+\cdots+h_4m_4=0\)（\(h_i\ne0\)）的解数，由引理 7 界以 \(5250(NK)^3\)。
+重索引 \(Q\mapsto Q/h\) 用到了 \(Q_i=h_i m_i\) 这一关联；丢掉它会损失一个 \(N^4\)。</li>
+</ol>
+
+<p>基例 \(k=2\) 即 Jameson 的引理 8，我们把它形式化为带一般二次形式
+\(f(n)=a_2n^2+a_1n\)（\(|a_2|\le c_2\)、\(|a_1|\le c_1N\)）的版本，得到
+\(\int_0^1|\sum_{n\le N}e(\alpha f(n))|^8d\alpha\le C(c_1,c_2)N^6\)，常数显式。
+最终组装为 <code>meanValueBound_all : ∀ d ≥ 2, MeanValueBound d</code>。</p>
+
+<h2>6. 定理 2：密度桥</h2>
+
+<p>这是我们先验估计工作量最大、实际最省力的一部分。Jameson 的证明只有三步，
+且完全不需要圆法的弧分解。</p>
+
+<p>令 \(S(\alpha)=\sum_{m\le M}e(\alpha m^k)\)，
+\(r(n)=\#\{(m_1,\dots,m_s)\in[0,M]^s:\sum m_i^k=n\}\)。</p>
+
+<ol>
+<li><b>积分表示。</b>展开 \(S^s\) 并应用正交性
+\(\int_0^1e(m\alpha)d\alpha=[m=0]\)，得
+\[
+r(n)=\int_0^1 S(\alpha)^s\,e(-n\alpha)\,d\alpha .
+\tag{2}
+\]</li>
+<li><b>上界。</b>由 (2) 得 \(|r(n)|\le\int_0^1|S(\alpha)|^sd\alpha\)；
+把定理 1 用于 \(s=8^{k-1}\)，得
+\[
+r(n)\ \le\ C\,M^{\,s-k}.
+\tag{3}
+\]</li>
+<li><b>下界。</b>每个满足 \(sM^k\le N\) 的 \(f\in\{0,\dots,M\}^s\) 都给出某个 \(n\le N\)
+的表示，故 \(\sum_{n\le N}r(n)\ge(M+1)^s\)。与 (3) 比较即得
+\(\#\{n\le N:r(n)>0\}\ \ge\ N/(2sC)\)，即正密度。</li>
+</ol>
+
+<p>\(k=1\) 时表示函数恒为 \(1\)，密度为 \(1\)。定理 2 的形式陈述为
+<code>positiveDensity : ∀ k, 0 &lt; k → ∃ s δ, 0 &lt; δ ∧ HasDensity {n | ∃ t ≤ s, IsSumOfKthPowers k n t} δ</code>，
+这正是 <code>WaringLinnik.waringTheorem_of_positive_density</code> 所消费的假设。</p>
+
+<h2>7. 形式化设计</h2>
+
+<h3>7.1 模块结构</h3>
+
+<p>开发被拆成 29 个模块，构成一个层次清晰的有向无环依赖图：基础层（陈述、正交性、
+有限差分）、初等计数层、解析层（指数和、Weyl 差分、Hölder）、均值归纳层、密度桥层，
+以及最后一行式的组装。图 2 按角色着色给出该图，图 4 给出规模分布。</p>
+
+<figure>
+  <img src="fig-zh/fig1_dag.png" alt="模块依赖图">
+  <figcaption><b>图 2.</b>依赖图。每个方框是一个模块，小字为行数，箭头由依赖指向被依赖者。
+  该图无环，分 0–8 层，没有任何模块引用其所在层之外的前驱。最终定理
+  （<code>Theorem2</code>，红色）恰好只依赖两个模块：均值估计与 Schnirelmann 接口。</figcaption>
+</figure>
+
+<figure>
+  <img src="fig-zh/fig4_lines.png" alt="模块规模">
+  <figcaption><b>图 3.</b>各模块行数。最大的三个模块是一般二次形式基例（1&nbsp;084 行）、
+  均值归纳（1&nbsp;776 行）与引理 3（785 行）。最终组装模块为 489 行，几乎全部是密度论证
+  ——数学归约在此前都已形式化完毕。</figcaption>
+</figure>
+
+<h3>7.2 复用了什么，什么是新的</h3>
+
+<p>三个发现塑造了整个设计：</p>
+
+<ol>
+<li><b>不需要 Fourier 级数。</b>\(|b_h|^m\) 的「Fourier 展开」只是有限指数和的有限重排，
+  所以 \([0,1]\) 上的正交性就足够了。这移除了预期中最大的依赖项（一套
+  <code>AddCircle</code> 上的 Fourier 理论），也是本项目耗时以天计、而非以年计的主要原因。</li>
+<li><b>归纳假设的尺度。</b>假设必须陈述为：求和长度为 \(M\le N\)，而系数界取 \(N\) 尺度；
+  否则变量替换 \(N-h\mapsto N\) 会在每一步损失一个 \(N\)。强化谓词
+  <code>MeanValueBoundS</code> 才是正确的形式，而它的基例需要重新推导引理 8 的常数账，
+  不能直接引用。</li>
+<li><b>符号折叠必须同时作用于 \(h\)。</b>要把 \(m\in[-K,K]^4\) 约化到 \([0,K]^4\)，必须
+  同时翻转 \(h_i\) 的符号：\((h,m)\mapsto(\operatorname{sgn}(m_i)h_i,|m_i|)\) 逐字保持
+  \(\sum h_im_i=0\)。只折叠 \(m\) 不行。</li>
+</ol>
+
+<h3>7.3 常数账</h3>
+
+<p>每个定理都携带显式常数。常数账机械但不容出错：指数恒等式
+\(4(m-1)+4(m-(d-1))+3d=8m-d\)（其中 \(m=8^{d-2}\)）必须精确成立，而因子
+\((M+1)^{4m}\) 与 \((2M)^{4(m-1)}\) 必须用 \(M\le N\) 吸收进 \(N^{8m-d}\)。
+四个反复出现的 Lean 陷阱是：<code>set</code> 使 <code>positivity</code> 失效；
+\(2^{d-1}\le 8^{d-2}\) 的底数不同；<code>Nat.lt_two_pow_self</code> 的隐式参数；
+以及 <code>calc</code> 因结合性失败（改用 <code>have := by ring</code> 加
+<code>rw</code> 即可）。</p>
+
+<h2>8. 验证</h2>
+
+<p>对每个模块的验证协议是：</p>
+<ol>
+<li>用 <code>lean -o Module.olean Module.lean</code> 从源码重新编译
+（此 Lean 版本<em>不带</em> <code>-o</code> 时不写 <code>.olean</code>）；</li>
+<li>扫描禁用词（<code>sorry</code>、<code>admit</code>、<code>axiom</code>、
+<code>native_decide</code>）；</li>
+<li>用 <code>#print axioms</code> 审计公理集；</li>
+<li>重新阅读每个主要定理的<em>陈述</em>，与数学内容对照——编译无法发现被弱化的假设。</li>
+</ol>
+
+<p>最终定理的审计输出为：</p>
+<pre><code>'Waring.waringTheorem' depends on axioms:
+  [propext, Classical.choice, Quot.sound]</code></pre>
+
+<p>这是 Lean 的三条标准公理（命题外延、经典选择、商的可靠性），Mathlib 中每个定理都依赖它们。
+关键是 <code>sorryAx</code> 不在其中。而 <code>WaringTheorem</code> 这一陈述本身位于
+<code>WaringStatement</code> 模块（44 行），该模块在主要工作开始前即被冻结，
+因此不可能被改弱以迁就证明。</p>
+
+<h3>8.1 一个数值 sanity check</h3>
+
+<p>作为对驱动定理 2 的表示数的独立检查，图 4 画出了直接枚举得到的 \(r_3(n)\) 及其计数函数。
+\(r_3(n)\) 的取值聚集在 \(\{1,3,6,9,12\}\) 上——这是三变量对称群的结果——而
+\(n\le2000\) 中约 \(16\%\) 可被表示，这与局部障碍 \(n\equiv\pm4\pmod 9\) 以及密度定理的
+定性内容（为正，但远小于 \(1\)）一致。</p>
+
+<figure>
+  <img src="fig/fig3_r3.png" alt="r_3(n) 及其计数函数">
+  <figcaption><b>图 4.</b>左：表示函数
+  \(r_3(n)=\#\{(a,b,c):a^3+b^3+c^3=n\}\)（\(n\le2000\)，暴力枚举）。右：其计数函数与斜率为
+  \(1\) 的直线对比；观测密度为 \(0.158\)。这不是证明的一部分，但说明了为什么密度论证
+  （而非精确表示陈述）才是自然的路线。（图内数学符号保留英文写法。）</figcaption>
+</figure>
+
+<h2>9. 经验教训</h2>
+
+<p><b>一次错了两个数量级的估计。</b>动工之前，我们在项目计划中记下：定理 1 是一个
+「多年度工程」，主要理由是假定圆法的形式化需要一套 Mathlib 中并不存在的
+<code>AddCircle</code> Fourier 理论。实际开发用了四天。错误不在数学，而在元数学：
+我们误判了究竟需要<em>哪一部分</em>基础设施。该证明从不需要 Fourier 收敛性——
+只需要有限和与正交性。</p>
+
+<p><b>带对抗性复核的委派。</b>约 40% 的代码由六个委派的子智能体在互相独立的模块上产出。
+每一份交付都在接纳前从源码重新核验，其中两次纠正了主控智能体真实的数学错误
+（符号折叠论证与 \(Q\mapsto Q/h\) 重索引）。教训是：委派有效的条件是
+（i）接口被精确陈述，（ii）验证是机械且对抗性的，（iii）主控保留设计决策权。</p>
+
+<p><b>编译是必要但不充分的。</b>一次通过的构建把证明项对照陈述作了认证；它对于陈述
+是否就是想要的那个陈述一无所知。本项目中单项价值最高的检查，是把冻结的
+<code>WaringTheorem</code> 定义与教科书陈述逐字对照。</p>
+
+<h2>10. 复现验证</h2>
+
+<pre><code>$lean = 'D:\lean\elan\toolchains\leanprover--lean4---v4.36.0-rc2\bin\lean.exe'
+$env:LEAN_PATH = ($paths -join ';')       # 工作区 + mathlib 构建目录
+Set-Location gaussian-week1
+&amp; $lean CheckFinal.lean                  # 打印 WaringTheorem 及其公理
+&amp; $lean CheckTheorem1.lean               # 均值估计
+&amp; $lean CheckWaringAll.lean              # 既有的密度/Schnirelmann 层</code></pre>
+
+<h2>参考文献</h2>
+
+<ol class="refs">
+<li>G. H. Hardy, J. E. Littlewood, <i>A new solution of Waring's problem</i>,
+Quart. J. Math. 48 (1919), 272–293.</li>
+<li>D. Hilbert, <i>Beweis für die Darstellbarkeit der ganzen Zahlen durch eine feste Anzahl
+nter Potenzen</i>, Math. Annalen 67 (1909), 281–300.</li>
+<li>J. Harrison, <i>HOL Light</i>：<code>Sieve/waring.ml</code>（1784 行，2026-11-06 提交），
+含 <code>HILBERT_WARING</code>、<code>WARING_HARDY_LITTLEWOOD</code>、
+<code>WARING_COUNT_LOWER</code>。</li>
+<li>L. K. Hua, <i>Introduction to Number Theory</i>, Springer, 1982.（§4 提到其中的更正。）</li>
+<li>G. J. O. Jameson, <i>Linnik's proof of the Waring–Hilbert theorem</i>, 讲义,
+Lancaster University.（原文见本仓库 <code>refs/warlin.txt</code>。）</li>
+<li>Yu. V. Linnik, <i>An elementary solution of Waring's problem by Shnirelman's method</i>
+（俄文）, Mat. Sbornik NS 12 (1943), 225–230.</li>
+<li>M. B. Nathanson, <i>Elementary Methods in Number Theory</i>, Springer, 2000.</li>
+<li>I. M. Vinogradov, <i>On Waring's theorem</i>（俄文）, Izv. Akad. Nauk SSSR 4 (1928),
+393–400.</li>
+<li>F. Wiedijk, <i>Formalizing 100 Theorems</i>,
+<code>cs.ru.nl/~freek/100/</code>（2026-11-01 版，其中 "Hilbert–Waring theorem" 仍列为未形式化）。</li>
+<li>The Mathlib community, <i>Mathlib4</i>, <code>leanprover-community/mathlib4</code>.</li>
+</ol>
+
+<hr style="margin-top:3rem;border:none;border-top:1px solid var(--rule)">
+<p class="note">交付物：<code>gaussian-week1/</code> 下 29 个 Lean 模块、10&nbsp;460 行。
+主结果：<code>WaringTheorem2.lean</code>，489 行。
+公理：<code>[propext, Classical.choice, Quot.sound]</code>。
+<code>Waring*</code> 模块内不含任何 <code>sorry</code>。</p>
+
+</body>
+</html>
