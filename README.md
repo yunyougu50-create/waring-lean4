@@ -71,6 +71,34 @@ results Mathlib does not have (in particular Legendre's three-square theorem, an
 `G(3) ≤ 8` input of Linnik/Watson for the large-`n` range). Check with
 `CheckG3Lower.lean`; axioms are the usual three.
 
+## Bonus: the general lower bound `g(k) ≥ 2^k + ⌊(3/2)^k⌋ − 2`
+
+`WaringGkLower.lean` (178 lines, no `sorry`) proves the **general** lower bound for the
+Waring function, for every `k ≥ 1`:
+
+```lean
+def IsSumOfPowersAtMost (d k n : ℕ) : Prop :=
+  ∃ f : ℕ → ℕ, (∀ i, k ≤ i → f i = 0) ∧ ∑ i ∈ Finset.range k, (f i) ^ d = n
+
+def waringLowerNum (k : ℕ) : ℕ := 2 ^ k * (3 ^ k / 2 ^ k) - 1
+
+theorem gk_lower_bound (k : ℕ) (hk : 1 ≤ k) {s : ℕ}
+    (h : IsSumOfPowersAtMost k s (waringLowerNum k)) :
+    2 ^ k + 3 ^ k / 2 ^ k - 2 ≤ s
+```
+
+Here `3^k / 2^k` is the natural-number division, which equals `⌊(3/2)^k⌋`.
+
+The argument (classical; Dickson 1936, see also Waldschmidt's notes): with `m = 3^k/2^k`
+and `n = 2^k·m − 1`, we have `n < 3^k`, so every summand is `0`, `1` or `2`; writing `a`
+for the number of `2^k` summands and `b` for the `1^k` ones, `a·2^k + b = n = 2^k·m − 1`
+forces `a ≤ m − 1` and hence `a + b ≥ 2^k + m − 2`.
+
+Check with `CheckGkLower.lean`; the sanity value `waringLowerNum 3 = 23` is `norm_num`.
+
+The **upper** bound `g(k) ≤ 2^k + ⌊(3/2)^k⌋ − 2` is not included (it needs the circle
+method), and neither is the exact value of `g` for `k ≥ 5`.
+
 ## Verification
 
 ```text
