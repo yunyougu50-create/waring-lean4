@@ -1,0 +1,17 @@
+# Lean build artifacts
+*.olean
+*.ilean
+*.c
+*.o
+*.trace
+.lake/
+build/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
